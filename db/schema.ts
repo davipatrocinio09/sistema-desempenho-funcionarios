@@ -5,6 +5,15 @@ export const users = sqliteTable('users', {
   email: text('email').notNull().unique(),
   name: text('name').notNull(),
   role: text('role', { enum: ['manager', 'employee'] }).notNull().default('employee'),
+  active: integer('active').notNull().default(1),
+  createdAt: text('created_at').notNull(),
+});
+
+export const audit = sqliteTable('audit', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  actor: text('actor').notNull(),
+  action: text('action').notNull(),
+  detail: text('detail').notNull(),
   createdAt: text('created_at').notNull(),
 });
 
