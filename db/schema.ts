@@ -8,6 +8,8 @@ export const users = sqliteTable('users', {
   active: integer('active').notNull().default(1),
   passwordHash: text('password_hash'),
   passwordSalt: text('password_salt'),
+  department: text('department').notNull().default('Não definido'),
+  accessScope: text('access_scope', { enum: ['own', 'all'] }).notNull().default('own'),
   createdAt: text('created_at').notNull(),
 });
 
