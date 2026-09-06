@@ -3,20 +3,25 @@ import { readFile,readdir } from 'node:fs/promises';
 import { build } from 'esbuild';
 import { Miniflare } from 'miniflare';
 import { productivityScore } from '../lib/ranking.ts';
+import { hashPassword,verifyPassword } from '../lib/password.ts';
 const mf=new Miniflare({modules:true,script:'export default {fetch(){return new Response("ok")}}',d1Databases:['DB']});
 try {
  assert.deepEqual(productivityScore(10,8,6,[4,5]),{rating:4.5,score:82});
  assert.deepEqual(productivityScore(0,0,0,[]),{rating:null,score:0});
+ const credentials=await hashPassword('SenhaSegura123!');
+ assert.equal(await verifyPassword('SenhaSegura123!',credentials.hash,credentials.salt),true);
+ assert.equal(await verifyPassword('SenhaErrada123!',credentials.hash,credentials.salt),false);
  const db=await mf.getD1Database('DB');
  for(const file of (await readdir('drizzle')).filter(f=>f.endsWith('.sql')).sort())for(const sql of (await readFile('drizzle/'+file,'utf8')).split('--> statement-breakpoint').filter(s=>s.trim()))await db.prepare(sql).run();
  const admin={id:'admin',email:'admin@test.test',name:'Admin',role:'admin',active:1};
  globalThis.testDb=db;globalThis.testMember=admin;
- const result=await build({entryPoints:['app/api/workspace/route.ts'],bundle:true,write:false,platform:'node',format:'esm',plugins:[{name:'test-service',setup(b){b.onResolve({filter:/^@\/lib\/service$/},()=>({path:'service',namespace:'test'}));b.onLoad({filter:/.*/,namespace:'test'},()=>({contents:'export function database(){return globalThis.testDb;} export async function member(){return globalThis.testMember;} export function event(u,a,d){return database().prepare("INSERT INTO audit (actor,action,detail,created_at) VALUES (?,?,?,?)").bind(u.name,a,JSON.stringify(d),new Date().toISOString());}'}));}}]});
+ const result=await build({entryPoints:['./app/api/workspace/route.ts'],bundle:true,write:false,platform:'node',format:'esm',plugins:[{name:'test-service',setup(b){b.onResolve({filter:/^@\/lib\/service$/},()=>({path:'service',namespace:'test'}));b.onLoad({filter:/.*/,namespace:'test'},()=>({contents:'export function database(){return globalThis.testDb;} export async function member(){return globalThis.testMember;} export function event(u,a,d){return database().prepare("INSERT INTO audit (actor,action,detail,created_at) VALUES (?,?,?,?)").bind(u.name,a,JSON.stringify(d),new Date().toISOString());}'}));}}]});
  const api=await import('data:text/javascript;base64,'+Buffer.from(result.outputFiles[0].text).toString('base64'));
  await db.prepare('INSERT INTO users (id,email,name,role,created_at) VALUES (?,?,?,?,?)').bind(admin.id,admin.email,admin.name,admin.role,new Date().toISOString()).run();
  const post=async(body,origin='https://test.local')=>api.POST(new Request('https://test.local/api/workspace',{method:'POST',headers:{origin,'Content-Type':'application/json'},body:JSON.stringify(body)}));
- assert.equal((await post({action:'user',name:'Alice',email:'alice@test.test',role:'employee'})).status,200);
- assert.equal((await post({action:'user',name:'Bob',email:'bob@test.test',role:'employee'})).status,200);
+ assert.equal((await post({action:'user',name:'Sem senha',email:'sem-senha@test.test',role:'employee'})).status,400);
+ assert.equal((await post({action:'user',name:'Alice',email:'alice@test.test',password:'AliceSenha123!',role:'employee'})).status,200);
+ assert.equal((await post({action:'user',name:'Bob',email:'bob@test.test',password:'BobSenha123!',role:'employee'})).status,200);
  const alice=await db.prepare('SELECT * FROM users WHERE email=?').bind('alice@test.test').first(),bob=await db.prepare('SELECT * FROM users WHERE email=?').bind('bob@test.test').first();
  assert.equal((await post({action:'create',title:'Entrega',employeeId:alice.id,due:'2026-10-01'})).status,200);
  const task=await db.prepare('SELECT * FROM tasks').first();
@@ -27,6 +32,6 @@ try {
  globalThis.testMember=admin;data=await (await api.GET()).json();assert.equal(data.tasks[0].title,'Relatório final');assert.equal(data.tasks[0].completion_notes,'Finalizado');assert.equal(data.tasks[0].status,'completed');assert.ok(data.history.some(h=>h.action==='Atividade editada'));assert.equal((await post({action:'review',id:task.id,score:4,comment:'Boa iniciativa'})).status,200);
  assert.equal((await post({action:'goal',title:'Entregas',employeeId:alice.id,due:'2026-10-01',target:3})).status,200);
  assert.equal((await post({action:'complete',id:task.id},'https://evil.test')).status,403);
- globalThis.testMember=null;assert.equal((await api.GET()).status,403);
- console.log('PASS: migrations, account roles, employee isolation, denied escalation, persistent edits, completion, review, goals, audit, CSRF and anonymous denial.');
+ globalThis.testMember=null;assert.equal((await api.GET()).status,401);
+ console.log('PASS: migrations, password hashing, account roles, employee isolation, denied escalation, persistent edits, completion, review, goals, audit, CSRF and anonymous denial.');
 }finally{await mf.dispose();}

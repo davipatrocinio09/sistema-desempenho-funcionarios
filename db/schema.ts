@@ -6,7 +6,23 @@ export const users = sqliteTable('users', {
   name: text('name').notNull(),
   role: text('role', { enum: ['manager', 'employee'] }).notNull().default('employee'),
   active: integer('active').notNull().default(1),
+  passwordHash: text('password_hash'),
+  passwordSalt: text('password_salt'),
   createdAt: text('created_at').notNull(),
+});
+
+export const sessions = sqliteTable('sessions', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id),
+  expiresAt: text('expires_at').notNull(),
+  createdAt: text('created_at').notNull(),
+});
+
+export const loginAttempts = sqliteTable('login_attempts', {
+  email: text('email').primaryKey(),
+  attempts: integer('attempts').notNull().default(0),
+  windowStart: text('window_start').notNull(),
+  lockedUntil: text('locked_until'),
 });
 
 export const audit = sqliteTable('audit', {

@@ -1,12 +1,13 @@
 import { database, member, event } from '@/lib/service';
 import { canEdit, isManager, validRole, type Member } from '@/lib/access';
+import { hashPassword, validatePassword } from '@/lib/password';
 
 export const dynamic = 'force-dynamic';
 const reply = (body: unknown, status = 200) => Response.json(body, {status, headers:{'Cache-Control':'no-store'}});
 export async function GET() {
   try {
     const me = await member();
-    if (!me) return reply({error:'Seu e-mail ainda não foi cadastrado ou seu acesso está desativado.'},403);
+    if (!me) return reply({error:'Faça login para continuar.'},401);
     const db = database(), manager = isManager(me);
     const tasks = await db.prepare('SELECT t.*,u.name AS employee_name,r.proactivity,r.comment FROM tasks t JOIN users u ON u.id=t.employee_id LEFT JOIN reviews r ON r.task_id=t.id '+(manager?'':'WHERE t.employee_id=? ')+'ORDER BY t.id DESC').bind(...(manager?[]:[me.id])).all();
     const goals = await db.prepare('SELECT g.*,u.name AS employee_name FROM goals g JOIN users u ON u.id=g.employee_id '+(manager?'':'WHERE g.employee_id=? ')+'ORDER BY g.id DESC').bind(...(manager?[]:[me.id])).all();
@@ -22,17 +23,31 @@ export async function POST(request: Request) {
   if(request.headers.get('origin')!==new URL(request.url).origin) return reply({error:'Origem não permitida.'},403);
   try {
     const me=await member();
-    if(!me) return reply({error:'Acesso não autorizado.'},403);
+    if(!me) return reply({error:'Acesso não autorizado.'},401);
     const b=await request.json() as Record<string,unknown>, db=database(), now=new Date().toISOString();
     const manager=isManager(me);
     if(b.action==='user') {
       if(me.role!=='admin') return reply({error:'Somente o administrador pode definir os perfis.'},403);
       const name=str(b.name),email=str(b.email).toLowerCase(),role=b.role;
       if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||!validRole(role)) throw Error('E-mail ou perfil inválido.');
-      const existing=await db.prepare('SELECT * FROM users WHERE email=?').bind(email).first<Member>();
+      const existing=await db.prepare('SELECT id,email,name,role,active,password_hash FROM users WHERE email=?').bind(email).first<Member&{password_hash:string|null}>();
       if(existing?.role==='admin') throw Error('A conta administradora não pode ser alterada aqui.');
       const active=b.active===false?0:1;
-      await db.batch([db.prepare('INSERT INTO users (id,email,name,role,active,created_at) VALUES (?,?,?,?,?,?) ON CONFLICT(email) DO UPDATE SET name=excluded.name,role=excluded.role,active=excluded.active').bind(crypto.randomUUID(),email,name,role,active,now),event(me,'Usuário atualizado',{name,email,role,active})]);
+      const password=typeof b.password==='string'&&b.password?validatePassword(b.password):null;
+      if(!existing&&!password) throw Error('Defina uma senha inicial para o novo usuário.');
+      const credentials=password?await hashPassword(password):null;
+      if(existing) {
+        const statements=[credentials
+          ? db.prepare('UPDATE users SET name=?,role=?,active=?,password_hash=?,password_salt=? WHERE id=?').bind(name,role,active,credentials.hash,credentials.salt,existing.id)
+          : db.prepare('UPDATE users SET name=?,role=?,active=? WHERE id=?').bind(name,role,active,existing.id),
+          event(me,'Usuário atualizado',{name,email,role,active,passwordChanged:!!credentials})];
+        if(credentials||existing.role!==role||existing.active!==active)statements.push(db.prepare('DELETE FROM sessions WHERE user_id=?').bind(existing.id));
+        await db.batch(statements);
+      } else await db.batch([db.prepare('INSERT INTO users (id,email,name,role,active,password_hash,password_salt,created_at) VALUES (?,?,?,?,?,?,?,?)').bind(crypto.randomUUID(),email,name,role,active,credentials!.hash,credentials!.salt,now),event(me,'Usuário cadastrado',{name,email,role,active})]);
+    } else if(b.action==='change_password') {
+      const password=validatePassword(b.password), credentials=await hashPassword(password);
+      await db.batch([db.prepare('UPDATE users SET password_hash=?,password_salt=? WHERE id=?').bind(credentials.hash,credentials.salt,me.id),db.prepare('DELETE FROM sessions WHERE user_id=?').bind(me.id),event(me,'Senha alterada',{userId:me.id})]);
+      return reply({ok:true,forceLogout:true});
     } else if(b.action==='create'||b.action==='goal') {
       if(!manager) return reply({error:'Somente gestores podem atribuir atividades e metas.'},403);
       const title=str(b.title),employeeId=str(b.employeeId),due=date(b.due);
