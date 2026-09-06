@@ -19,7 +19,7 @@ export async function POST(request: Request) {
     type LoginUser={id:string;email:string;name:string;role:string;active:number;password_hash:string|null;password_salt:string|null};
     let user = await db.prepare('SELECT id,email,name,role,active,password_hash,password_salt FROM users WHERE email=?').bind(email).first<LoginUser>();
     const config = settings(), adminEmail = config.ADMIN_EMAIL?.toLowerCase().trim();
-    if (email && email === adminEmail && config.ADMIN_PASSWORD_HASH && config.ADMIN_PASSWORD_SALT && (!user || !user.password_hash)) {
+    if (email && email === adminEmail && config.ADMIN_PASSWORD_HASH && config.ADMIN_PASSWORD_SALT) {
       await db.prepare("INSERT INTO users (id,email,name,role,active,password_hash,password_salt,created_at) VALUES (?,?,?,'admin',1,?,?,?) ON CONFLICT(email) DO UPDATE SET role='admin',active=1,password_hash=excluded.password_hash,password_salt=excluded.password_salt").bind(crypto.randomUUID(),email,'Administrador',config.ADMIN_PASSWORD_HASH,config.ADMIN_PASSWORD_SALT,nowIso).run();
       user = await db.prepare('SELECT id,email,name,role,active,password_hash,password_salt FROM users WHERE email=?').bind(email).first<LoginUser>();
     }
