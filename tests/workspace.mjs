@@ -2,8 +2,11 @@ import assert from 'node:assert/strict';
 import { readFile,readdir } from 'node:fs/promises';
 import { build } from 'esbuild';
 import { Miniflare } from 'miniflare';
+import { productivityScore } from '../lib/ranking.ts';
 const mf=new Miniflare({modules:true,script:'export default {fetch(){return new Response("ok")}}',d1Databases:['DB']});
 try {
+ assert.deepEqual(productivityScore(10,8,6,[4,5]),{rating:4.5,score:82});
+ assert.deepEqual(productivityScore(0,0,0,[]),{rating:null,score:0});
  const db=await mf.getD1Database('DB');
  for(const file of (await readdir('drizzle')).filter(f=>f.endsWith('.sql')).sort())for(const sql of (await readFile('drizzle/'+file,'utf8')).split('--> statement-breakpoint').filter(s=>s.trim()))await db.prepare(sql).run();
  const admin={id:'admin',email:'admin@test.test',name:'Admin',role:'admin',active:1};
