@@ -41,5 +41,5 @@ export async function POST(request: Request) {
     ]);
     const secure = new URL(request.url).protocol === 'https:' ? '; Secure' : '';
     return reply({ok:true},200,{'Set-Cookie':`avanca_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800${secure}`});
-  } catch { return reply({error:'Não foi possível entrar. Tente novamente.'},400); }
+  } catch (error) { console.error('Login failed',error); return reply({error:'Não foi possível entrar. Tente novamente.'},400); }
 }
