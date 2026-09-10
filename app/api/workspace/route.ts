@@ -50,6 +50,15 @@ export async function POST(request: Request) {
       const password=validatePassword(b.password), credentials=await hashPassword(password);
       await db.batch([db.prepare('UPDATE users SET password_hash=?,password_salt=? WHERE id=?').bind(credentials.hash,credentials.salt,me.id),db.prepare('DELETE FROM sessions WHERE user_id=?').bind(me.id),event(me,'Senha alterada',{userId:me.id})]);
       return reply({ok:true,forceLogout:true});
+    } else if(b.action==='submit') {
+      if(manager) return reply({error:'Use uma conta de funcionário para enviar uma atividade concluída.'},403);
+      const title=str(b.title),notes=typeof b.notes==='string'?b.notes.trim():'';
+      if(notes.length>5000) throw Error('O registro deve ter até 5.000 caracteres.');
+      const today=now.slice(0,10);
+      await db.batch([
+        db.prepare("INSERT INTO tasks (employee_id,created_by,title,description,due_date,status,completion_notes,completed_at,created_at) VALUES (?,?,?,?,?,'completed',?,?,?)").bind(me.id,me.id,title,notes,today,notes,now,now),
+        event(me,'Atividade enviada ao gestor',{title,notes,department:me.department})
+      ]);
     } else if(b.action==='create'||b.action==='goal') {
       if(!manager) return reply({error:'Somente gestores podem atribuir atividades e metas.'},403);
       const title=str(b.title),employeeId=str(b.employeeId),due=date(b.due);

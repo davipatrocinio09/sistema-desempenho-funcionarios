@@ -31,10 +31,13 @@ try {
  globalThis.testMember=bob;assert.equal((await (await api.GET()).json()).tasks.length,1);assert.equal((await post({action:'edit',id:task.id,title:'Invadida'})).status,403);
  globalThis.testMember=alice;assert.equal((await post({action:'user',name:'Alice',email:alice.email,role:'manager',department:'Financeiro'})).status,403);assert.equal((await post({action:'review',id:task.id,score:5})).status,400);
  assert.equal((await post({action:'edit',id:task.id,title:'Relatório final',notes:'Finalizado'})).status,200);assert.equal((await post({action:'complete',id:task.id})).status,200);
+ assert.equal((await post({action:'submit',title:'Conferência diária',notes:'Pagamentos conferidos e enviados.'})).status,200);
+ globalThis.testMember=financeManager;const managerAfterSubmission=await (await api.GET()).json();assert.equal(managerAfterSubmission.tasks.length,2);assert.ok(managerAfterSubmission.tasks.some(t=>t.title==='Conferência diária'&&t.status==='completed'&&t.created_by===alice.id));
+ globalThis.testMember=alice;
  let data=await (await api.GET()).json();assert.equal(data.users.length,1);assert.equal(data.history.length,0);
  globalThis.testMember=admin;data=await (await api.GET()).json();const edited=data.tasks.find(t=>t.id===task.id);assert.equal(edited.title,'Relatório final');assert.equal(edited.completion_notes,'Finalizado');assert.equal(edited.status,'completed');assert.ok(data.history.some(h=>h.action==='Atividade editada'));
  assert.equal((await post({action:'goal',title:'Entregas',employeeId:alice.id,due:'2026-10-01',target:3})).status,200);
  assert.equal((await post({action:'complete',id:task.id},'https://evil.test')).status,403);
  globalThis.testMember=null;assert.equal((await api.GET()).status,401);
- console.log('PASS: migrations, password hashing, sector isolation, HR all-sector access, employee isolation, denied escalation, persistent edits, completion, goals, audit, CSRF and anonymous denial.');
+ console.log('PASS: migrations, password hashing, sector isolation, HR all-sector access, employee submission, manager receipt, denied escalation, persistent edits, completion, goals, audit, CSRF and anonymous denial.');
 }finally{await mf.dispose();}
